@@ -1,2 +1,10 @@
-# testwise-ai
-Testwise-AI is an AI-powered assistant for analyzing test reports from embedded and avionics systems. It ingests log files, extracts key results, summarizes failures, and suggests likely root causes — helping engineers debug faster and certify smarter.
+# Testwise-AI
+
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://shields.io/)
+
+Testwise-AI is an AI-powered assistant for analyzing embedded test logs...
+
+## Features
+- Upload and parse .txt/.csv logs
+- View summarized test results
+- Get root cause suggestions using GPT

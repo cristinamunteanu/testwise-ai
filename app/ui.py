@@ -10,6 +10,7 @@ st.set_page_config(page_title="Testwise-AI", layout="wide")
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.parser import parse_file
+from app.summary import summarize_log  # Import the summarize_log helper function
 
 st.title("🧪 Testwise-AI — Log Analyzer")
 
@@ -39,26 +40,27 @@ if uploaded_file:
         st.sidebar.header("🔍 Filter")
         show_only_failed = st.sidebar.checkbox("Show only FAILED tests", value=False)
 
+        # Use summarize_log helper function on the original DataFrame
+        summary = summarize_log(df)
+
+        # Display summary
+        st.markdown("### 📈 Test Summary")
+        st.markdown(f"- **Total tests:** {summary['total']}")
+        st.markdown(f"- ✅ Passed: {summary['passed']}")
+        st.markdown(f"- ❌ Failed: {summary['failed']}")
+
+        # Apply filter for display purposes
         if show_only_failed:
             df = df[df["status"] == "FAIL"]
 
-        # Show table
+        # Show filtered or unfiltered DataFrame
         st.dataframe(df, use_container_width=True)
 
-        # Basic stats
-        total = len(df)
-        failed = df[df["status"] == "FAIL"].shape[0]
-        passed = df[df["status"] == "PASS"].shape[0]
-
-        st.markdown(f"""
-        ### 📊 Summary
-        - Total Tests: **{total}**
-        - ✅ Passed: **{passed}**
-        - ❌ Failed: **{failed}**
-        """)
-
-        # Chart placeholder (optional)
-        st.markdown("### 🔧 Coming next: Error summary, LLM insights, and root cause suggestions")
+        # Error breakdown
+        if summary["failed"] > 0:
+            st.markdown("### 🔍 Top Failing Error Types")
+            st.dataframe(summary["top_errors"])
+            st.bar_chart(summary["top_errors"].set_index("error"))
 
     except ValueError as e:
         st.error(f"Error while parsing log: {str(e)}")
