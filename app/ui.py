@@ -62,6 +62,10 @@ if uploaded_file:
             st.dataframe(summary["top_errors"])
             st.bar_chart(summary["top_errors"].set_index("error"))
 
+        # Display LLM-generated summary
+        st.markdown("### 🤖 LLM-Generated Summary")
+        st.markdown(summary["llm_summary"])
+
     except ValueError as e:
         st.error(f"Error while parsing log: {str(e)}")
     except Exception as e:

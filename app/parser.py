@@ -1,7 +1,11 @@
 import pandas as pd
 import re
 import os
+import logging
 from typing import Union, IO
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
 def parse_file(file_input: Union[str, IO]) -> pd.DataFrame:
     """
@@ -11,7 +15,7 @@ def parse_file(file_input: Union[str, IO]) -> pd.DataFrame:
         file_input: A file path (str) or file-like object (e.g., from Streamlit uploader)
 
     Returns:
-        pd.DataFrame with columns ["test_case", "status", "error"]
+        pd.DataFrame with columns ["test_case", "status", "module", "error"]
     """
     if isinstance(file_input, str):
         ext = os.path.splitext(file_input)[-1].lower()
@@ -46,33 +50,70 @@ def parse_csv(file_input: Union[str, IO]) -> pd.DataFrame:
 
 def parse_txt(file_input: Union[str, IO]) -> pd.DataFrame:
     """
-    Parse a plain text log file and extract test_case, status, and optional error.
+    Parse a plain text or log file and extract test_case, status, module, and optional error.
 
-    Expected line format:
-        test_case_01: PASS
-        test_case_02: FAIL - TimeoutError
+    Supported formats:
+    - Log format:
+        [timestamp] ▶ Result: test_case | status | Module: module_name | Error: error_message
+    - Text format:
+        [timestamp] [RESULT] test_case [module] status - error_message
+    - Simple format:
+        test_case: status
     """
     if isinstance(file_input, str):
         # If file_input is a file path, open the file and read lines
+        logging.debug("Opening file path for reading.")
         with open(file_input, "r") as f:
             lines = f.readlines()
     else:
-        # If file_input is a file-like object, read and decode its content
-        lines = file_input.read().decode("utf-8").splitlines()
+        # If file_input is a file-like object, read its content once
+        logging.debug("Reading file-like object.")
+        content = file_input.read()
+        if isinstance(content, bytes):
+            lines = content.decode("utf-8").splitlines()
+        else:
+            lines = content.splitlines()
+
+    logging.debug(f"Total lines read: {len(lines)}")
 
     results = []
-    pattern = re.compile(r"(?P<test_case>\w+): (?P<status>PASS|FAIL)(?: - (?P<error>.+))?")
+
+    # Regular expressions for different formats
+    log_pattern = re.compile(
+        r"\[.*?\] ▶ Result: (?P<test_case>\w+) \| (?P<status>PASS|FAIL) \| Module: (?P<module>\w+)(?: \| Error: (?P<error>.+))?"
+    )
+    txt_pattern = re.compile(
+        r"\[RESULT\] (?P<test_case>\w+) \[(?P<module>\w+)\] (?P<status>PASS|FAIL)(?: - (?P<error>.+))?"
+    )
+    simple_pattern = re.compile(
+        r"(?P<test_case>\w+): (?P<status>PASS|FAIL)"
+    )
 
     for line in lines:
-        match = pattern.search(line)
+        logging.debug(f"Processing line: {line}")
+        # Try matching the log format first
+        match = log_pattern.search(line)
+        if not match:
+            # If no match, try the text format
+            match = txt_pattern.search(line)
+        if not match:
+            # If no match, try the simple format
+            match = simple_pattern.search(line)
+
         if match:
+            logging.debug(f"Line matched: {line}")
             test_case = match.group("test_case")
             status = match.group("status")
-            error = match.group("error") or ""
+            module = match.group("module") if "module" in match.groupdict() else ""
+            error = match.group("error") if "error" in match.groupdict() else None
             results.append({
                 "test_case": test_case,
                 "status": status,
-                "error": error.strip()
+                "module": module,
+                "error": error.strip() if error else ""
             })
+        else:
+            logging.warning(f"Line did not match any pattern: {line}")
 
-    return pd.DataFrame(results, columns=["test_case", "status", "error"])
+    logging.debug(f"Total valid lines parsed: {len(results)}")
+    return pd.DataFrame(results, columns=["test_case", "status", "module", "error"])
