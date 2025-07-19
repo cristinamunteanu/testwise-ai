@@ -2,9 +2,8 @@ import pandas as pd
 from openai import OpenAI
 import os
 
-
 client = OpenAI(
-    api_key = os.getenv("OPENAI_API_KEY"),
+    api_key=os.getenv("OPENAI_API_KEY"),
 )
 
 def summarize_log(df: pd.DataFrame):
@@ -35,40 +34,36 @@ def summarize_log(df: pd.DataFrame):
         "llm_summary": llm_summary
     }
 
-def generate_llm_summary(total, passed, failed, error_summary):
-    """
-    Use OpenAI's GPT to generate a summary and action items based on test results.
-    """
-    # Validate that the error_summary DataFrame contains the required columns
-    required_columns = {"error", "count"}
-    if not required_columns.issubset(error_summary.columns):
-        return f"Error: The error_summary DataFrame must contain the following columns: {required_columns}"
-
-    # Prepare the prompt
+def summarize_chunk(chunk, total, passed, failed, chunk_idx=None, total_chunks=None):
     error_details = "\n".join(
-        "- " + error_summary["error"] + ": " + error_summary["count"].astype(str) + " occurrences"
+        "- " + chunk["error"] + ": " + chunk["count"].astype(str) + " occurrences"
     )
-    prompt = f"""
-    You are an AI assistant summarizing embedded test results.
-    Instructions:
-    - Write a concise, technical summary in bullet or paragraph form.
-    - Limit the response to **under 500 tokens**.
-    - Avoid repeating information. Be focused and efficient.
+    chunk_info = f" (Chunk {chunk_idx+1}/{total_chunks})" if chunk_idx is not None else ""
 
-    Test Summary:
+    prompt = f"""
+    You are a senior QA engineer summarizing automated test results for embedded systems.
+
+    Constraints:
+    - Be concise and direct (max 500 tokens)
+    - Use engineering tone (clear, factual)
+    - Use bullets where helpful
+    - Avoid generic language or repetition
+    - Highlight what matters most to debugging/fix
+
+    Test Metrics:
     - Total tests: {total}
     - Passed: {passed}
     - Failed: {failed}
-    - Error breakdown:
+
+    Failure Breakdown:
     {error_details}
 
-    Based on the above data, provide:
-    1. A technical summary of test health
-    2. Notable failure patterns or trends
-    3. Optional action items or next steps
+    Deliver:
+    1. **Test Health Summary** (1–2 sentences)
+    2. **Key Failure Patterns** (concise bullet points, sorted by frequency)
+    3. **Suggested Actions** (short, high-impact engineering tasks)
     """
 
-    # Call OpenAI API using the chat/completions endpoint
     try:
         response = client.chat.completions.create(
             model="gpt-4",
@@ -79,8 +74,49 @@ def generate_llm_summary(total, passed, failed, error_summary):
             max_tokens=300,
             temperature=0.3
         )
-        result = response.choices[0].message.content
-        print("Mocked result:", result)
-        return result
+        return response.choices[0].message.content
     except Exception as e:
         return f"Error generating summary: {str(e)}"
+
+def generate_llm_summary(total, passed, failed, error_summary, chunk_size=50):
+    """
+    Use OpenAI's GPT to generate a summary and action items based on test results.
+    For large logs, chunk the error_summary and summarize each chunk, then combine.
+    """
+    required_columns = {"error", "count"}
+    if not required_columns.issubset(error_summary.columns):
+        return f"Error: The error_summary DataFrame must contain the following columns: {required_columns}"
+
+    n = len(error_summary)
+    if n == 0:
+        return "No failures to summarize."
+    if n <= chunk_size:
+        return summarize_chunk(error_summary, total, passed, failed)
+    else:
+        summaries = []
+        total_chunks = (n + chunk_size - 1) // chunk_size
+        for i, start in enumerate(range(0, n, chunk_size)):
+            chunk = error_summary.iloc[start:start+chunk_size]
+            summaries.append(summarize_chunk(chunk, total, passed, failed, i, total_chunks))
+        combined_summary = "\n\n".join(summaries)
+        if total_chunks > 1:
+            final_prompt = (
+                "You are an AI assistant. Combine the following chunked summaries into a single, concise technical summary "
+                "and action items for the test results. Avoid repetition.\n\n"
+                + combined_summary
+            )
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": "You are an expert QA assistant for embedded systems."},
+                        {"role": "user", "content": final_prompt}
+                    ],
+                    max_tokens=300,
+                    temperature=0.3
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                return f"Error generating summary: {str(e)}"
+        else:
+            return combined_summary
