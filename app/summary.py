@@ -120,3 +120,43 @@ def generate_llm_summary(total, passed, failed, error_summary, chunk_size=50):
                 return f"Error generating summary: {str(e)}"
         else:
             return combined_summary
+
+def extract_top_errors_with_examples(df: pd.DataFrame, top_n=5):
+    top_errors = (
+        df[df["status"] == "FAIL"]
+        .groupby("error")
+        .size()
+        .sort_values(ascending=False)
+        .head(top_n)
+        .index.tolist()
+    )
+
+    error_examples = {}
+    for err in top_errors:
+        examples = df[df["error"] == err]["test_case"].head(3).tolist()
+        error_examples[err] = examples
+
+    return error_examples
+
+def prompt_root_cause_analysis(error_examples: dict) -> str:
+    error_blocks = "\n".join(
+        f"- {err} (e.g. {', '.join(examples)})"
+        for err, examples in error_examples.items()
+    )
+
+    prompt = f"""
+You are a senior embedded systems test engineer. Analyze the following error messages and test cases.
+
+For each error:
+- Suggest a likely root cause (based on typical embedded issues)
+- Propose an actionable fix or test strategy
+
+Top Failures:
+{error_blocks}
+
+Format output clearly with bullet points per error.
+Avoid generic responses and keep it technical.
+"""
+
+    return prompt
+
