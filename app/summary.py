@@ -6,6 +6,9 @@ client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
 )
 
+def is_llm_disabled():
+    return os.environ.get("TESTWISE_NO_LLM", "0") == "1"
+
 def summarize_log(df: pd.DataFrame):
     """
     Summarize test results and integrate LLM for generating a report.
@@ -35,6 +38,8 @@ def summarize_log(df: pd.DataFrame):
     }
 
 def summarize_chunk(chunk, total, passed, failed, chunk_idx=None, total_chunks=None):
+    if is_llm_disabled():
+        return "[LLM disabled: no summary generated in test mode.]"
     error_details = "\n".join(
         "- " + chunk["error"] + ": " + chunk["count"].astype(str) + " occurrences"
     )
@@ -79,10 +84,8 @@ def summarize_chunk(chunk, total, passed, failed, chunk_idx=None, total_chunks=N
         return f"Error generating summary: {str(e)}"
 
 def generate_llm_summary(total, passed, failed, error_summary, chunk_size=50):
-    """
-    Use OpenAI's GPT to generate a summary and action items based on test results.
-    For large logs, chunk the error_summary and summarize each chunk, then combine.
-    """
+    if is_llm_disabled():
+        return "[LLM disabled: no summary generated in test mode.]"
     required_columns = {"error", "count"}
     if not required_columns.issubset(error_summary.columns):
         return f"Error: The error_summary DataFrame must contain the following columns: {required_columns}"
@@ -121,42 +124,4 @@ def generate_llm_summary(total, passed, failed, error_summary, chunk_size=50):
         else:
             return combined_summary
 
-def extract_top_errors_with_examples(df: pd.DataFrame, top_n=5):
-    top_errors = (
-        df[df["status"] == "FAIL"]
-        .groupby("error")
-        .size()
-        .sort_values(ascending=False)
-        .head(top_n)
-        .index.tolist()
-    )
-
-    error_examples = {}
-    for err in top_errors:
-        examples = df[df["error"] == err]["test_case"].head(3).tolist()
-        error_examples[err] = examples
-
-    return error_examples
-
-def prompt_root_cause_analysis(error_examples: dict) -> str:
-    error_blocks = "\n".join(
-        f"- {err} (e.g. {', '.join(examples)})"
-        for err, examples in error_examples.items()
-    )
-
-    prompt = f"""
-You are a senior embedded systems test engineer. Analyze the following error messages and test cases.
-
-For each error:
-- Suggest a likely root cause (based on typical embedded issues)
-- Propose an actionable fix or test strategy
-
-Top Failures:
-{error_blocks}
-
-Format output clearly with bullet points per error.
-Avoid generic responses and keep it technical.
-"""
-
-    return prompt
 

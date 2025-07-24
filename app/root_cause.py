@@ -2,6 +2,8 @@ import pandas as pd
 from openai import OpenAI
 import os
 
+from app.summary import is_llm_disabled
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def extract_top_errors_with_examples(df: pd.DataFrame, top_n=5):
@@ -53,6 +55,8 @@ Respond concisely.
     return prompt
 
 def get_root_cause_suggestions(prompt: str, model="gpt-4"):
+    if is_llm_disabled():
+        return "[LLM disabled: no root cause suggestions generated in test mode.]"
     try:
         response = client.chat.completions.create(
             model=model,

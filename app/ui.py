@@ -36,6 +36,7 @@ from app.root_cause import (
     get_root_cause_suggestions,
 )
 from app.report_gen import generate_markdown_report, save_report_as_pdf
+from app.summary import is_llm_disabled
 
 
 st.title("🧪 Testwise-AI — Log Analyzer")
@@ -66,39 +67,59 @@ if uploaded_file:
         st.sidebar.header("🔍 Filter")
         show_only_failed = st.sidebar.checkbox("Show only FAILED tests", value=False)
 
-        # Use summarize_log helper function on the original DataFrame
-        summary = summarize_log(df)
+        st.sidebar.header("🔎 Filter Tests")
 
-        # Display summary
-        st.markdown("### 📈 Test Summary")
-        st.markdown(f"- **Total tests:** {summary['total']}")
-        st.markdown(f"- ✅ Passed: {summary['passed']}")
-        st.markdown(f"- ❌ Failed: {summary['failed']}")
+        # Dynamic multi-select for test types
+        test_types = sorted([t for t in df["test_type"].unique() if t])
+        selected_test_types = st.sidebar.multiselect(
+            "Test type(s)",
+            options=test_types,
+            default=test_types
+        )
+
+        # Dynamic multi-select for modules
+        modules = sorted([m for m in df["module"].unique() if m])
+        selected_modules = st.sidebar.multiselect(
+            "Module(s)",
+            options=modules,
+            default=modules
+        )
+
+        # Apply filters
+        filtered_df = df.copy()
+        if selected_test_types:
+            filtered_df = filtered_df[filtered_df["test_type"].isin(selected_test_types)]
+        if selected_modules:
+            filtered_df = filtered_df[filtered_df["module"].isin(selected_modules)]
 
         # Apply filter for display purposes
         if show_only_failed:
-            df = df[df["status"] == "FAIL"]
+            filtered_df = filtered_df[filtered_df["status"] == "FAIL"]
 
-        # Show filtered or unfiltered DataFrame
-        st.dataframe(df, use_container_width=True)
+        # Show filtered DataFrame only once
+        st.dataframe(filtered_df, use_container_width=True)
+
+        # Use summarize_log helper function on the filtered DataFrame
+        if not is_llm_disabled():
+            summary = summarize_log(filtered_df)
+            st.markdown("### 🤖 LLM-Generated Summary")
+            st.markdown(summary["llm_summary"])
+            st.download_button(
+                label="Download Summary as Markdown",
+                data=f"# LLM-Generated Summary\n\n{summary['llm_summary']}",
+                file_name="summary_output.md",
+                mime="text/markdown",
+                key="download_llm_summary"
+            )
+        else:
+            summary = None  # or skip summary generation entirely
+            st.info("LLM summary is disabled in test mode.")
 
         # Error breakdown
-        if summary["failed"] > 0:
+        if summary and summary["failed"] > 0:
             st.markdown("### 🔍 Top Failing Error Types")
             st.dataframe(summary["top_errors"])
             st.bar_chart(summary["top_errors"].set_index("error"))
-
-        # Display LLM-generated summary
-        st.markdown("### 🤖 LLM-Generated Summary")
-        st.markdown(summary["llm_summary"])
-
-        # Download button for LLM-generated summary as Markdown
-        st.download_button(
-            label="Download Summary as Markdown",
-            data=f"# LLM-Generated Summary\n\n{summary['llm_summary']}",
-            file_name="summary_output.md",
-            mime="text/markdown"
-        )
 
     except ValueError as e:
         st.error(f"Error while parsing log: {str(e)}")
@@ -113,21 +134,24 @@ if "root_summary" not in st.session_state:
     st.session_state.root_summary = None
 
 if st.button("🧠 Analyze Top Failures"):
-    with st.spinner("Running GPT analysis..."):
-        top_errors = extract_top_errors_with_examples(df)
-        root_prompt = prompt_root_cause_analysis(top_errors)
-        root_summary = get_root_cause_suggestions(root_prompt)
-        st.session_state.root_summary = root_summary  # <-- Store in session_state
+    if not is_llm_disabled():
+        with st.spinner("Running GPT analysis..."):
+            top_errors = extract_top_errors_with_examples(df)
+            root_prompt = prompt_root_cause_analysis(top_errors)
+            root_summary = get_root_cause_suggestions(root_prompt)
+            st.session_state.root_summary = root_summary  # <-- Store in session_state
 
-    st.markdown("### 📄 Root Cause Report")
-    st.markdown(st.session_state.root_summary)
+        st.markdown("### 📄 Root Cause Report")
+        st.markdown(st.session_state.root_summary)
 
-    if st.download_button("💾 Download Root Cause Report", st.session_state.root_summary, file_name="root_cause.md"):
-        st.success("Report downloaded.")
+        if st.download_button("💾 Download Root Cause Report", st.session_state.root_summary, file_name="root_cause.md"):
+            st.success("Report downloaded.")
+    else:
+        st.info("LLM root cause analysis is disabled in test mode.")
 
 st.markdown("## 📥 Downloadable Report")
 
-if st.button("📄 Generate Markdown + PDF Report"):
+if st.button("📄 Generate Markdown + PDF Report") and summary:
     with st.spinner("Generating report..."):
         markdown = generate_markdown_report(summary, root_cause=st.session_state.get("root_summary", None))
         markdown_no_emoji = strip_emojis(generate_markdown_report(summary, root_cause=st.session_state.get("root_summary", None), for_pdf=True))
@@ -147,7 +171,8 @@ if st.button("📄 Generate Markdown + PDF Report"):
         label="⬇️ Download Markdown",
         data=st.session_state.generated_md,
         file_name="testwise_report.md",
-        mime="text/markdown"
+        mime="text/markdown",
+        key="download_full_report_md"
     )
 
 
