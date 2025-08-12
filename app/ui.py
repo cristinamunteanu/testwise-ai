@@ -118,12 +118,18 @@ if uploaded_file:
         if show_only_failed:
             filtered_df = filtered_df[filtered_df["status"] == "FAIL"]
 
-        # Show filtered DataFrame only once
+        # After parsing df (the full DataFrame)
+        if "summary" not in st.session_state or st.session_state.get("summary_df_hash") != hash(df.to_csv(index=False)):
+            # Only regenerate if new file or data changed
+            st.session_state.summary = summarize_log(df)
+            st.session_state.summary_df_hash = hash(df.to_csv(index=False))
+        summary = st.session_state.summary
+
+        # Show filtered DataFrame
         st.dataframe(filtered_df.drop(columns=["timestamp"], errors="ignore"), use_container_width=True)
 
-        # Use summarize_log helper function on the filtered DataFrame
+        # Show LLM summary (always based on full df)
         if not is_llm_disabled():
-            summary = summarize_log(filtered_df)
             st.markdown("### 🤖 LLM-Generated Summary")
             st.markdown(summary["llm_summary"])
             st.download_button(
@@ -134,10 +140,9 @@ if uploaded_file:
                 key="download_llm_summary"
             )
         else:
-            summary = None  # or skip summary generation entirely
             st.info("LLM summary is disabled in test mode.")
 
-        # Error breakdown
+        # Error breakdown (can use filtered or full, as you prefer)
         if summary and summary["failed"] > 0:
             st.markdown("### 🔍 Top Failing Error Types")
             st.dataframe(summary["top_errors"])
@@ -158,10 +163,10 @@ if "root_summary" not in st.session_state:
 if st.button("🧠 Analyze Top Failures"):
     if not is_llm_disabled():
         with st.spinner("Running GPT analysis..."):
-            top_errors = extract_top_errors_with_examples(df)
+            top_errors = extract_top_errors_with_examples(df)  # Use full df
             root_prompt = prompt_root_cause_analysis(top_errors)
             root_summary = get_root_cause_suggestions(root_prompt)
-            st.session_state.root_summary = root_summary  # <-- Store in session_state
+            st.session_state.root_summary = root_summary
 
         st.markdown("### 📄 Root Cause Report")
         st.markdown(st.session_state.root_summary)

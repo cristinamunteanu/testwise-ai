@@ -31,3 +31,7 @@ htmlcov/
 # Logs and logs
 logs/
 
+# report files
+testwise_report.pdf
+testwise_report.html
+testwise_report.md
