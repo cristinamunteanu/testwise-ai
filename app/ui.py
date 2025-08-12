@@ -1,3 +1,25 @@
+"""
+ui.py
+
+This module implements the Streamlit-based user interface for Testwise-AI, an automated test log analyzer.
+
+Main features:
+- Upload and parse test log files in .txt, .log, or .csv format.
+- Interactive filtering of test results by test type, module, and status.
+- Display of parsed and filtered test results in a table.
+- LLM-powered summary and root cause analysis (if enabled).
+- Downloadable Markdown and PDF reports of the analysis.
+- Emoji stripping utility for clean PDF output.
+
+Functions:
+    strip_emojis(text): Remove emojis and non-ASCII symbols from a string.
+    (All other logic is implemented inline in the Streamlit app.)
+    
+Usage:
+    Run this file with Streamlit to launch the Testwise-AI web app:
+        streamlit run app/ui.py
+"""
+
 import streamlit as st
 import pandas as pd
 import sys
@@ -97,7 +119,7 @@ if uploaded_file:
             filtered_df = filtered_df[filtered_df["status"] == "FAIL"]
 
         # Show filtered DataFrame only once
-        st.dataframe(filtered_df, use_container_width=True)
+        st.dataframe(filtered_df.drop(columns=["timestamp"], errors="ignore"), use_container_width=True)
 
         # Use summarize_log helper function on the filtered DataFrame
         if not is_llm_disabled():

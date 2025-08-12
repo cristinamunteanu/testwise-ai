@@ -1,7 +1,9 @@
 import pandas as pd
-import pytest
+import os
 from unittest.mock import patch, MagicMock
-from app.summary import summarize_log, summarize_chunk, generate_llm_summary
+import pytest
+
+from app.summary import summarize_log, summarize_chunk, generate_llm_summary, is_llm_disabled
 
 def make_error_summary(n):
     return pd.DataFrame({
@@ -156,5 +158,67 @@ def test_generate_llm_summary_chunked_but_no_final_combine():
             assert result == "chunk-0-summary"
             # Should only call summarize_chunk, not the final combine
             mock_create.assert_not_called()
+
+def test_is_llm_disabled_env(monkeypatch):
+    monkeypatch.setenv("TESTWISE_NO_LLM", "1")
+    assert is_llm_disabled() is True
+    monkeypatch.setenv("TESTWISE_NO_LLM", "0")
+    assert is_llm_disabled() is False
+
+def test_summarize_log_empty_df():
+    df = pd.DataFrame(columns=["test_case", "status", "module", "error"])
+    with patch("app.summary.generate_llm_summary", return_value="No failures to summarize."):
+        summary = summarize_log(df)
+        assert summary["total"] == 0
+        assert summary["passed"] == 0
+        assert summary["failed"] == 0
+        assert summary["top_errors"].empty
+        assert summary["llm_summary"] == "No failures to summarize."
+
+def test_summarize_chunk_llm_disabled(monkeypatch):
+    monkeypatch.setenv("TESTWISE_NO_LLM", "1")
+    chunk = pd.DataFrame({"error": ["TimeoutError"], "count": [5]})
+    result = summarize_chunk(chunk, 10, 7, 3)
+    assert "[LLM disabled" in result
+
+def test_generate_llm_summary_llm_disabled(monkeypatch):
+    monkeypatch.setenv("TESTWISE_NO_LLM", "1")
+    error_summary = pd.DataFrame({"error": ["TimeoutError"], "count": [5]})
+    result = generate_llm_summary(10, 7, 3, error_summary)
+    assert "[LLM disabled" in result
+
+def test_generate_llm_summary_missing_columns():
+    error_summary = pd.DataFrame({"err": [1], "count": [1]})
+    result = generate_llm_summary(1, 0, 1, error_summary)
+    assert "Error: The error_summary DataFrame must contain the following columns:" in result
+
+def test_generate_llm_summary_no_failures():
+    error_summary = pd.DataFrame({"error": [], "count": []})
+    result = generate_llm_summary(0, 0, 0, error_summary)
+    assert result == "No failures to summarize."
+
+def test_summarize_chunk_exception():
+    chunk = pd.DataFrame({"error": ["TimeoutError"], "count": [5]})
+    with patch("app.summary.client.chat.completions.create", side_effect=Exception("API fail")):
+        result = summarize_chunk(chunk, 10, 7, 3)
+        assert result.startswith("Error generating summary:")
+
+def test_generate_llm_summary_chunk_exception():
+    error_summary = pd.DataFrame({"error": [f"Error{i}" for i in range(60)], "count": [i for i in range(60)]})
+    # Patch summarize_chunk to raise for the first chunk
+    with patch("app.summary.summarize_chunk", side_effect=Exception("Chunk error")):
+        with pytest.raises(Exception) as excinfo:
+            generate_llm_summary(60, 30, 30, error_summary, chunk_size=50)
+        assert "Chunk error" in str(excinfo.value)
+
+def test_generate_llm_summary_final_combine_exception():
+    error_summary = pd.DataFrame({"error": [f"Error{i}" for i in range(60)], "count": [i for i in range(60)]})
+    # Patch summarize_chunk to return a string, patch client to raise on combine
+    with patch("app.summary.summarize_chunk", return_value="chunk-summary"):
+        with patch("app.summary.client.chat.completions.create", side_effect=Exception("Combine error")):
+            result = generate_llm_summary(60, 30, 30, error_summary, chunk_size=50)
+            assert "Error generating summary: Combine error" in result
+
+
 
 

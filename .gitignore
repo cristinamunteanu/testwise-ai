@@ -21,9 +21,6 @@ Thumbs.db
 # Streamlit cache
 .streamlit/
 
-# Ignore Streamlit secrets and config
-.streamlit/
-
 # Ignore notes.txt
 notes.txt
 

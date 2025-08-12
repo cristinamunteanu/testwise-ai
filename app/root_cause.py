@@ -2,8 +2,6 @@ import pandas as pd
 from openai import OpenAI
 import os
 
-from app.summary import is_llm_disabled
-
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def extract_top_errors_with_examples(df: pd.DataFrame, top_n=5):
@@ -18,7 +16,8 @@ def extract_top_errors_with_examples(df: pd.DataFrame, top_n=5):
 
     error_examples = {}
     for err in top_errors:
-        examples = df[df["error"] == err]["test_case"].head(3).tolist()
+        # Only include failed test cases as examples
+        examples = df[(df["error"] == err) & (df["status"] == "FAIL")]["test_case"].head(3).tolist()
         error_examples[err] = examples
 
     return error_examples
@@ -30,38 +29,28 @@ def prompt_root_cause_analysis(error_examples: dict) -> str:
     )
 
     prompt = f"""
-You are a senior embedded systems QA engineer. Analyze the following recurring errors and test case examples.
+Analyze the following recurring test failures and their associated test cases.
 
 For each error:
-- Identify a likely root cause (e.g., uninitialized memory, timing bug, I2C line conflict)
-- Suggest a practical fix or test improvement
+- Identify the most likely root cause (specific to embedded software)
+- Suggest a concrete engineering fix or mitigation
 
-Top Failures:
-{error_blocks}
-
-Format:
+Use this format:
 - **Error:** ...
   - **Likely Cause:** ...
   - **Suggested Fix:** ...
 
-Instructions:
-- Limit your answer to a maximum of 3 concise bullet points per error.
-- Keep the total response under 350 words.
-- Be specific, technical, and avoid vague advice.
-- Do not repeat information.
-
-Respond concisely.
+Top Errors:
+{error_blocks}
 """
     return prompt
 
 def get_root_cause_suggestions(prompt: str, model="gpt-4"):
-    if is_llm_disabled():
-        return "[LLM disabled: no root cause suggestions generated in test mode.]"
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "You are an embedded software QA assistant."},
+                {"role": "system", "content": "You are a senior embedded QA engineer who writes structured, technical failure analysis reports."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,

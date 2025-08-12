@@ -1,3 +1,22 @@
+"""
+summary.py
+
+This module provides utilities for summarizing test results from log DataFrames,
+including generating technical summaries using a Large Language Model (LLM) such as OpenAI's GPT.
+
+Main features:
+- Summarize test results and error patterns from a DataFrame.
+- Generate concise, engineering-focused summaries using LLMs.
+- Handle large error lists by chunking and combining LLM outputs.
+- Optionally disable LLM features via environment variable for test mode.
+
+Functions:
+    is_llm_disabled(): Check if LLM features are disabled via environment variable.
+    summarize_log(df): Summarize test results and generate an LLM-based summary.
+    summarize_chunk(chunk, total, passed, failed, chunk_idx=None, total_chunks=None): Generate an LLM summary for a chunk of errors.
+    generate_llm_summary(total, passed, failed, error_summary, chunk_size=50): Generate a technical summary using the LLM, with chunking support.
+"""
+
 import pandas as pd
 from openai import OpenAI
 import os
@@ -7,11 +26,29 @@ client = OpenAI(
 )
 
 def is_llm_disabled():
+    """
+    Check if LLM (Large Language Model) features are disabled.
+
+    Returns:
+        bool: True if the environment variable 'TESTWISE_NO_LLM' is set to "1", otherwise False.
+    """
     return os.environ.get("TESTWISE_NO_LLM", "0") == "1"
 
 def summarize_log(df: pd.DataFrame):
     """
-    Summarize test results and integrate LLM for generating a report.
+    Summarize test results from a DataFrame and generate an LLM-based summary.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing test results with at least 'status' and 'error' columns.
+
+    Returns:
+        dict: {
+            "total": int,         # Total number of tests
+            "passed": int,        # Number of passed tests
+            "failed": int,        # Number of failed tests
+            "top_errors": pd.DataFrame,  # DataFrame of top errors and their counts
+            "llm_summary": str    # LLM-generated summary of the results
+        }
     """
     # Basic summary statistics
     total = len(df)
@@ -38,6 +75,20 @@ def summarize_log(df: pd.DataFrame):
     }
 
 def summarize_chunk(chunk, total, passed, failed, chunk_idx=None, total_chunks=None):
+    """
+    Generate a summary for a chunk of error data using the LLM.
+
+    Args:
+        chunk (pd.DataFrame): DataFrame with 'error' and 'count' columns for this chunk.
+        total (int): Total number of tests.
+        passed (int): Number of passed tests.
+        failed (int): Number of failed tests.
+        chunk_idx (int, optional): Index of the current chunk (for multi-chunk summaries).
+        total_chunks (int, optional): Total number of chunks.
+
+    Returns:
+        str: LLM-generated summary for this chunk, or an error message if LLM fails.
+    """
     if is_llm_disabled():
         return "[LLM disabled: no summary generated in test mode.]"
     error_details = "\n".join(
@@ -84,6 +135,19 @@ def summarize_chunk(chunk, total, passed, failed, chunk_idx=None, total_chunks=N
         return f"Error generating summary: {str(e)}"
 
 def generate_llm_summary(total, passed, failed, error_summary, chunk_size=50):
+    """
+    Generate a technical summary of test results using the LLM, handling large error lists by chunking.
+
+    Args:
+        total (int): Total number of tests.
+        passed (int): Number of passed tests.
+        failed (int): Number of failed tests.
+        error_summary (pd.DataFrame): DataFrame with 'error' and 'count' columns.
+        chunk_size (int, optional): Maximum number of errors per chunk for LLM summarization.
+
+    Returns:
+        str: LLM-generated summary, or an error message if LLM fails or is disabled.
+    """
     if is_llm_disabled():
         return "[LLM disabled: no summary generated in test mode.]"
     required_columns = {"error", "count"}
