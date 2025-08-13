@@ -26,6 +26,7 @@ import sys
 import os
 import tempfile
 import re
+import time
 
 def strip_emojis(text):
     import re
@@ -72,18 +73,36 @@ uploaded_file = st.file_uploader("Upload a test log", type=["txt", "csv", "log"]
 
 if uploaded_file:
     try:
-        # Save the uploaded file temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as temp_file:
-            temp_file.write(uploaded_file.read())
-            temp_path = temp_file.name
+        # Show spinner while parsing the file
+        with st.spinner("Parsing file..."):
+            # Reset file pointer and read file bytes
+            uploaded_file.seek(0)
+            file_bytes = uploaded_file.read()
+            # Save the uploaded file temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as temp_file:
+                temp_file.write(file_bytes)
+                temp_path = temp_file.name
 
-        # Parse the file using its temporary path
-        df = parse_file(temp_path)
+            # Parse the file using its temporary path
+            df = parse_file(temp_path)
 
-        # Clean up the temporary file
-        os.unlink(temp_path)
+            # Clean up the temporary file
+            os.unlink(temp_path)
+
+        if df.empty:
+            st.warning(
+                "The uploaded file was parsed successfully, but no test cases were found. "
+                "Please check that your file contains valid test log data."
+            )
+            st.stop()
 
         st.success(f"Parsed {len(df)} test cases.")
+
+        # --- File summary section ---
+        st.markdown("### 📄 Uploaded File Summary")
+        st.write(f"**Filename:** `{uploaded_file.name}`")
+        st.write(f"**Size:** {uploaded_file.size / 1024:.2f} KB")
+        st.write(f"**Rows parsed:** {len(df)}")
         
         # Filter options
         st.sidebar.header("🔍 Filter")
@@ -149,11 +168,20 @@ if uploaded_file:
             st.bar_chart(summary["top_errors"].set_index("error"))
 
     except ValueError as e:
-        st.error(f"Error while parsing log: {str(e)}")
+        st.error(
+            f"❌ Error while parsing log: {str(e)}\n\n"
+            "Please ensure your file is in a supported format and contains valid test log data."
+        )
     except Exception as e:
-        st.error(f"An unexpected error occurred: {str(e)}")
+        st.error(
+            f"🚨 An unexpected error occurred: {str(e)}\n\n"
+            "Try re-uploading your file or contact support if the issue persists."
+        )
 else:
-    st.info("Upload a test log to get started.")
+    st.info(
+        "📤 Upload a `.txt`, `.log`, or `.csv` test log to get started. "
+        "Your file will be processed securely and never stored."
+    )
 
 st.markdown("## 🔍 Root Cause Suggestions")
 
