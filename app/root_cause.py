@@ -105,4 +105,4 @@ def get_root_cause_suggestions(prompt: str, model="gpt-4"):
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error generating root cause suggestions: {str(e)}
+        return f"Error generating root cause suggestions: {str(e)}"

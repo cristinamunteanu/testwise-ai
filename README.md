@@ -14,7 +14,7 @@ This project demonstrates **log parsing, summarization, GPT-powered analysis, an
 - 📊 **Interactive Filtering** — Filter results by **test type**, **module**, and **status**
 - 🤖 **GPT Summaries** — Generate concise engineering summaries of test outcomes
 - 🔍 **Root Cause Analysis** — GPT suggests likely causes and fixes for top failures
-- 📈 **Charts** — View pass/fail breakdowns and top error frequencies
+- 📈 **Charts** — View top error frequencies
 - 📥 **Reports** — Download analysis as Markdown or PDF
 
 ---
