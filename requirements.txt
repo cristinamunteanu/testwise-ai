@@ -4,3 +4,5 @@ matplotlib
 openai
 pytest
 pytest-cov
+markdown2
+pdfkit
